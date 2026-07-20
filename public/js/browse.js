@@ -313,11 +313,16 @@ const checkUrlParams = () => {
 };
 
 // ── Init ──
-
 document.addEventListener("DOMContentLoaded", async () => {
   await loadData();
   checkUrlParams();
-  document
-    .getElementById("browse-search")
-    .addEventListener("focus", requestCustomerLocation, { once: true });
+  document.getElementById("browse-search").addEventListener("focus", requestCustomerLocation, { once: true });
+
+  // if arriving with a search already in the URL (e.g. from the homepage or
+  // a category link), request location right away instead of waiting for
+  // the customer to touch the search bar again
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("search")) {
+    requestCustomerLocation();
+  }
 });
