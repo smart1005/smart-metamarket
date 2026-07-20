@@ -4,7 +4,8 @@ const asyncHandler = require("../middleware/asyncHandler");
 const { protect, restrictTo } = require("../middleware/authMiddleware");
 const {
   initializeSubscription,
-  verifySubscription,
+  verifySubscription, 
+  callbackSubscription
 } = require("../controllers/paymentController");
 
 router.post(
@@ -19,5 +20,9 @@ router.get(
   restrictTo("vendor"),
   asyncHandler(verifySubscription),
 );
+router.get(
+  "/callback",
+  asyncHandler(callbackSubscription),
+); // This route is for Paystack's callback after payment completion
 
 module.exports = router;

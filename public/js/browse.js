@@ -2,6 +2,47 @@ let allProducts = [];
 let allServices = [];
 let currentTab = "products";
 let selectedCategory = null;
+let customerLocation = null;
+let locationRequested = false;
+
+// ── Relevance Scoring ──
+const getRelevanceScore = (query, text) => {
+  const q = (query || "").toLowerCase().trim();
+  const t = (text || "").toLowerCase();
+  if (!q) return 1;
+  if (t === q) return 4;
+  if (t.includes(q)) return 3;
+  const queryWords = q.split(/\s+/).filter(Boolean);
+  const matchedWords = queryWords.filter((w) => t.includes(w));
+  if (matchedWords.length === queryWords.length) return 2;
+  if (matchedWords.length > 0) return 1;
+  return 0;
+};
+
+// ── Distance (Haversine, in km) ──
+const getDistanceKm = (from, to) => {
+  if (!from || !to || typeof to.lat !== "number" || typeof to.lng !== "number") {
+    return null;
+  }
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(to.lat - from.lat);
+  const dLng = toRad(to.lng - from.lng);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(from.lat)) * Math.cos(toRad(to.lat)) * Math.sin(dLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+// ── Sort: relevance first, distance only breaks ties ──
+const compareResults = (a, b) => {
+  if (b._relevance !== a._relevance) return b._relevance - a._relevance;
+  const distA = getDistanceKm(customerLocation, a.vendorLocation);
+  const distB = getDistanceKm(customerLocation, b.vendorLocation);
+  if (distA !== null && distB !== null) return distA - distB;
+  return 0;
+};
 
 // ── Switch Tabs ──
 const switchTab = (tab) => {
@@ -24,6 +65,45 @@ const switchTab = (tab) => {
   handleSearch();
 };
 
+const requestCustomerLocation = () => {
+  if (locationRequested) return;
+  locationRequested = true;
+
+  if (!navigator.geolocation) {
+    showLocationMessage(
+      "Location isn't supported on this device — showing all results.",
+    );
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      customerLocation = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+      };
+      hideLocationMessage();
+      handleSearch();
+    },
+    () => {
+      showLocationMessage(
+        "Turn on your location to see vendors closer to you.",
+      );
+    },
+  );
+};
+
+const showLocationMessage = (text) => {
+  const el = document.getElementById("location-message");
+  el.textContent = text;
+  el.style.display = "block";
+};
+
+const hideLocationMessage = () => {
+  const el = document.getElementById("location-message");
+  el.style.display = "none";
+};
+
 // ── Handle Search ──
 const handleSearch = () => {
   const query = document
@@ -32,24 +112,28 @@ const handleSearch = () => {
     .trim();
 
   if (currentTab === "products") {
-    const filtered = allProducts.filter((p) =>
-      p.name.toLowerCase().includes(query),
-    );
-    renderProducts(filtered);
+    const scored = allProducts
+      .map((p) => ({ ...p, _relevance: getRelevanceScore(query, p.name) }))
+      .filter((p) => p._relevance > 0);
+    scored.sort(compareResults);
+    renderProducts(scored);
   } else {
     let filtered = allServices;
     if (selectedCategory) {
       filtered = filtered.filter((s) => s.category === selectedCategory);
     }
-    if (query) {
-      filtered = filtered.filter(
-        (s) =>
-          s.jobTitle?.toLowerCase().includes(query) ||
-          s.title?.toLowerCase().includes(query) ||
-          s.skills?.some((skill) => skill.toLowerCase().includes(query)),
-      );
-    }
-    renderServices(filtered);
+    const scored = filtered
+      .map((s) => ({
+        ...s,
+        _relevance: Math.max(
+          getRelevanceScore(query, s.jobTitle),
+          getRelevanceScore(query, s.title),
+          ...(s.skills || []).map((skill) => getRelevanceScore(query, skill)),
+        ),
+      }))
+      .filter((s) => s._relevance > 0);
+    scored.sort(compareResults);
+    renderServices(scored);
   }
 };
 
@@ -58,8 +142,6 @@ const renderProducts = (products) => {
   const grid = document.getElementById("products-grid");
   const count = document.getElementById("product-count");
   count.textContent = `${products.length} found`;
-
-products = products.sort(() => Math.random() - 0.5);
 
   if (products.length === 0) {
     grid.innerHTML = "<p class='text-sub text-center'>No products found</p>";
@@ -80,7 +162,13 @@ products = products.sort(() => Math.random() - 0.5);
         <p>${product.description || ""}</p>
         <div class="vendor-card-meta">
           <span class="vendor-type-badge">₦${Number(product.price).toLocaleString()}</span>
-          <span class="vendor-location">by ${product.vendorName}</span>
+          <span class="vendor-location">by ${product.vendorName}${(() => {
+            const dist = getDistanceKm(
+              customerLocation,
+              product.vendorLocation,
+            );
+            return dist !== null ? ` • ~${dist.toFixed(1)}km away` : "";
+          })()}</span>
         </div>
       </div>
     </div>
@@ -94,8 +182,6 @@ const renderServices = (services) => {
   const grid = document.getElementById("services-grid");
   const count = document.getElementById("service-count");
   count.textContent = `${services.length} found`;
-  
-services = services.sort(() => Math.random() - 0.5);
 
   if (services.length === 0) {
     grid.innerHTML = "<p class='text-sub text-center'>No services found</p>";
@@ -116,7 +202,13 @@ services = services.sort(() => Math.random() - 0.5);
         <p>${service.description || ""}</p>
         <div class="vendor-card-meta">
           <span class="vendor-type-badge">🔧 ${service.category || "Service"}</span>
-          <span class="vendor-location">by ${service.vendorName}</span>
+          <span class="vendor-location">by ${service.vendorName}${(() => {
+            const dist = getDistanceKm(
+              customerLocation,
+              service.vendorLocation,
+            );
+            return dist !== null ? ` • ~${dist.toFixed(1)}km away` : "";
+          })()}</span>
         </div>
       </div>
     </div>
@@ -221,7 +313,11 @@ const checkUrlParams = () => {
 };
 
 // ── Init ──
+
 document.addEventListener("DOMContentLoaded", async () => {
   await loadData();
   checkUrlParams();
+  document
+    .getElementById("browse-search")
+    .addEventListener("focus", requestCustomerLocation, { once: true });
 });

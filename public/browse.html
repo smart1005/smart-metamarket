@@ -33,17 +33,17 @@
       </div>
 
       <!-- Search Bar -->
-      <div class="search-box" style="margin-bottom: 20px;">
+      <div class="search-box" style="margin-bottom: 8px;">
         <span class="search-icon">🔍</span>
         <input 
-          type="text" 
-          id="browse-search" 
-          placeholder="Search..." 
+          type="text"
+          id="browse-search"
+          placeholder="Search..."
           oninput="handleSearch()"
         />
         <button class="search-btn" onclick="handleSearch()">Go</button>
       </div>
-    </section>
+      <p class="text-sub" id="location-message" style="margin-bottom: 20px; display: none;"></p>
 
     <!-- Products Tab -->
     <section class="section" id="products-tab" style="padding-top: 0;">

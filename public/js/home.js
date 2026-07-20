@@ -2,6 +2,7 @@
 const initHero = () => {
   const canvas = document.getElementById("hero-canvas");
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true });
+  renderer.setClearColor(0x000000, 0);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(window.devicePixelRatio);
 
@@ -14,22 +15,37 @@ const initHero = () => {
   );
   camera.position.z = 5;
 
-  // floating particles
+  // floating particles — mix of orange and gold
   const geometry = new THREE.BufferGeometry();
-  const count = 800;
+  const count = 1000;
   const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
 
-  for (let i = 0; i < count * 3; i++) {
-    positions[i] = (Math.random() - 0.5) * 20;
+  for (let i = 0; i < count; i++) {
+    positions[i * 3] = (Math.random() - 0.5) * 20;
+    positions[i * 3 + 1] = (Math.random() - 0.5) * 20;
+    positions[i * 3 + 2] = (Math.random() - 0.5) * 20;
+
+    // alternate between orange and gold
+    if (Math.random() > 0.5) {
+      colors[i * 3] = 1.0;
+      colors[i * 3 + 1] = 0.42;
+      colors[i * 3 + 2] = 0.21;
+    } else {
+      colors[i * 3] = 1.0;
+      colors[i * 3 + 1] = 0.84;
+      colors[i * 3 + 2] = 0.0;
+    }
   }
 
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
   const material = new THREE.PointsMaterial({
-    color: 0xff6b35,
-    size: 0.05,
+    size: 0.06,
     transparent: true,
     opacity: 0.8,
+    vertexColors: true,
   });
 
   const particles = new THREE.Points(geometry, material);
@@ -37,12 +53,13 @@ const initHero = () => {
 
   // floating rings
   const rings = [];
+  const ringColors = [0xff6b35, 0xffd700, 0xff8c5a];
   for (let i = 0; i < 3; i++) {
     const ringGeo = new THREE.TorusGeometry(1.5 + i * 0.8, 0.02, 16, 100);
     const ringMat = new THREE.MeshBasicMaterial({
-      color: 0xff6b35,
+      color: ringColors[i],
       transparent: true,
-      opacity: 0.15 - i * 0.03,
+      opacity: 0.12 - i * 0.02,
     });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = Math.random() * Math.PI;
@@ -51,11 +68,10 @@ const initHero = () => {
     rings.push(ring);
   }
 
-  // animate
   const animate = () => {
     requestAnimationFrame(animate);
-    particles.rotation.y += 0.001;
-    particles.rotation.x += 0.0005;
+    particles.rotation.y += 0.0008;
+    particles.rotation.x += 0.0003;
     rings.forEach((ring, i) => {
       ring.rotation.x += 0.002 * (i + 1);
       ring.rotation.y += 0.001 * (i + 1);
@@ -65,7 +81,6 @@ const initHero = () => {
 
   animate();
 
-  // resize handler
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -73,7 +88,7 @@ const initHero = () => {
   });
 };
 
-// ── Category Icons Map ──
+// ── Category Icons ──
 const categoryIcons = {
   Education: "📚",
   Healthcare: "🏥",
@@ -97,68 +112,115 @@ const categoryIcons = {
   "Specialized Services": "⭐",
 };
 
-// ── Load Categories ──
+// ── Load Categories as Chips ──
 const loadCategories = async () => {
-  const grid = document.getElementById("category-grid");
+  const container = document.getElementById("category-chips");
   try {
     const data = await getJobTitles();
     const categories = data.jobTitles || data.categories || [];
-
     if (categories.length === 0) {
-      grid.innerHTML =
-        "<p class='text-sub text-center'>No categories found</p>";
+      container.innerHTML = "<p class='text-sub'>No categories found</p>";
       return;
     }
-
-    grid.innerHTML = categories
+    container.innerHTML = categories
       .map(
         (cat) => `
-      <div class="category-card" onclick="window.location='browse.html?type=services&category=${encodeURIComponent(cat.category)}'">
-        <div class="icon">${categoryIcons[cat.category] || "🔹"}</div>
-        <p>${cat.category}</p>
+      <div class="category-chip" 
+        onclick="window.location='browse.html?type=services&category=${encodeURIComponent(cat.category)}'">
+        <span>${categoryIcons[cat.category] || "🔹"}</span>
+        <span>${cat.category}</span>
       </div>
     `,
       )
       .join("");
   } catch (error) {
-    grid.innerHTML =
-      "<p class='text-sub text-center'>Failed to load categories</p>";
+    container.innerHTML = "<p class='text-sub'>Failed to load</p>";
   }
 };
 
-// ── Load Vendors ──
-const loadVendors = async () => {
-  const grid = document.getElementById("vendor-grid");
+// ── Load Services Horizontal Scroll ──
+const loadServicesScroll = async () => {
+  const container = document.getElementById("services-scroll");
   try {
-    const data = await getVendors();
-    let vendors = data.vendors || [];
-
-    if (vendors.length === 0) {
-      grid.innerHTML = "<p class='text-sub text-center'>No vendors yet</p>";
+    const data = await getServices();
+    let services = data.services || [];
+    if (services.length === 0) {
+      container.innerHTML = "<p class='text-sub'>No services yet</p>";
       return;
     }
-
-    // shuffle vendors randomly
-    vendors = vendors.sort(() => Math.random() - 0.5);
-
-    // show max 6 on homepage
-    vendors = vendors.slice(0, 6);
-
-    grid.innerHTML = vendors
+    services = services.sort(() => Math.random() - 0.5).slice(0, 10);
+    container.innerHTML = services
       .map(
-        (vendor) => `
-      <div class="vendor-card" onclick="window.location='vendor.html?id=${vendor.id}'">
-        <img 
-          class="vendor-card-image" 
-          src="${vendor.profileImage || "https://via.placeholder.com/400x160/1a1a1a/FF6B35?text=No+Image"}" 
-          alt="${vendor.businessName}"
-        />
+        (service) => `
+      <div class="service-card" onclick="window.location='vendor.html?id=${service.vendorId}'">
+        <div class="service-icon">${categoryIcons[service.category] || "🔧"}</div>
+        <h4>${service.jobTitle || service.title}</h4>
+        <div class="by">by ${service.vendorName}</div>
+        ${service.price ? `<div style="color: var(--primary); font-weight: 700; font-size: 0.85rem; margin-top: 6px;">From ₦${Number(service.price).toLocaleString()}</div>` : ""}
+      </div>
+    `,
+      )
+      .join("");
+  } catch (error) {
+    container.innerHTML = "<p class='text-sub'>Failed to load</p>";
+  }
+};
+
+// ── Load Products Horizontal Scroll ──
+const loadProductsScroll = async () => {
+  const container = document.getElementById("products-scroll");
+  try {
+    const data = await getProducts();
+    let products = data.products || [];
+    if (products.length === 0) {
+      container.innerHTML = "<p class='text-sub'>No products yet</p>";
+      return;
+    }
+    products = products.sort(() => Math.random() - 0.5).slice(0, 10);
+    container.innerHTML = products
+      .map(
+        (product) => `
+      <div class="product-card" onclick="window.location='vendor.html?id=${product.vendorId}'">
+        <img src="${product.imageUrl || "https://via.placeholder.com/160x120/141414/FF6B35?text=No+Image"}" 
+          alt="${product.name}" />
+        <div class="product-card-body">
+          <h4>${product.name}</h4>
+          <div class="by">by ${product.vendorName}</div>
+          <div class="price">₦${Number(product.price).toLocaleString()}</div>
+        </div>
+      </div>
+    `,
+      )
+      .join("");
+  } catch (error) {
+    container.innerHTML = "<p class='text-sub'>Failed to load</p>";
+  }
+};
+
+// ── Load Featured Products (big cards) ──
+const loadFeaturedProducts = async () => {
+  const grid = document.getElementById("featured-grid");
+  try {
+    const data = await getProducts();
+    let products = data.products || [];
+    if (products.length === 0) {
+      grid.innerHTML = "<p class='text-sub text-center'>No products yet</p>";
+      return;
+    }
+    products = products.sort(() => Math.random() - 0.5).slice(0, 6);
+    grid.innerHTML = products
+      .map(
+        (product) => `
+      <div class="vendor-card" onclick="window.location='vendor.html?id=${product.vendorId}'">
+        <img class="vendor-card-image"
+          src="${product.imageUrl || "https://via.placeholder.com/400x160/141414/FF6B35?text=No+Image"}"
+          alt="${product.name}" />
         <div class="vendor-card-body">
-          <h3>${vendor.businessName}</h3>
-          <p>${vendor.category || "General"}</p>
+          <h3>${product.name}</h3>
+          <div class="vendor-by">by ${product.vendorName}</div>
           <div class="vendor-card-meta">
-            <span class="vendor-type-badge">${vendor.vendorType === "service" ? "🔧 Service" : "🛍️ Products"}</span>
-            <span class="vendor-location">📍 ${vendor.location?.city || "Nigeria"}</span>
+            <span class="vendor-type-badge">₦${Number(product.price).toLocaleString()}</span>
+            <span class="vendor-location">${product.category || ""}</span>
           </div>
         </div>
       </div>
@@ -166,12 +228,11 @@ const loadVendors = async () => {
       )
       .join("");
   } catch (error) {
-    grid.innerHTML =
-      "<p class='text-sub text-center'>Failed to load vendors</p>";
+    grid.innerHTML = "<p class='text-sub text-center'>Failed to load</p>";
   }
 };
 
-// ── Search Functions ──
+// ── Search ──
 const searchProducts = () => {
   const query = document.getElementById("product-search").value.trim();
   if (!query) return showToast("Enter a product to search", "error");
@@ -184,11 +245,10 @@ const searchServices = () => {
   window.location.href = `browse.html?type=services&search=${encodeURIComponent(query)}`;
 };
 
-// ── Enter Key Support ──
+// ── Enter Key ──
 document.getElementById("product-search").addEventListener("keypress", (e) => {
   if (e.key === "Enter") searchProducts();
 });
-
 document.getElementById("service-search").addEventListener("keypress", (e) => {
   if (e.key === "Enter") searchServices();
 });
@@ -197,5 +257,7 @@ document.getElementById("service-search").addEventListener("keypress", (e) => {
 document.addEventListener("DOMContentLoaded", () => {
   initHero();
   loadCategories();
-  loadVendors();
+  loadServicesScroll();
+  loadProductsScroll();
+  loadFeaturedProducts();
 });

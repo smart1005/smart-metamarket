@@ -3,8 +3,11 @@ const cloudinary = require("cloudinary").v2;
 const { validateServicePayload } = require("../utils/validators");
 
 const extractPublicIdFromUrl = (url) => {
-  if (!url) return null;
-  const match = url.match(/\/([^/]+)\.[a-z]+$/);
+  if (!url || typeof url !== "string") return null;
+  const cleanUrl = url.split("?")[0].split("#")[0];
+  const match = cleanUrl.match(
+    /\/smart-shop\/services\/([^/]+)\.[a-zA-Z0-9]+$/,
+  );
   return match ? `smart-shop/services/${match[1]}` : null;
 };
 
@@ -71,57 +74,65 @@ const normalizeRequestBody = (body) => {
 };
 
 const addService = async (req, res) => {
-  const payload = normalizeRequestBody(req.body);
+  try {
+    const payload = normalizeRequestBody(req.body);
 
-  const validationError = validateServicePayload(payload);
-  if (validationError) {
-    return res.status(400).json({ message: validationError });
-  }
-
-  const { title, jobTitle, description, price, category, skills } = payload;
-  const serviceTitle = (jobTitle || title || "").trim();
-  const imageUrls = getUploadedImageUrls(req);
-  // determine category from jobTitle when possible
-  let computedCategory = category;
-  if (serviceTitle) {
-    try {
-      const snapshot = await db
-        .collection("jobTitles")
-        .where("titles", "array-contains", serviceTitle)
-        .limit(1)
-        .get();
-      if (!snapshot.empty) {
-        computedCategory = snapshot.docs[0].data().category;
-      }
-    } catch (err) {
-      console.error("Error fetching job title category:", err.message);
+    const validationError = validateServicePayload(payload);
+    if (validationError) {
+      return res.status(400).json({ message: validationError });
     }
+
+    const { title, jobTitle, description, price, category, skills } = payload;
+    const serviceTitle = (jobTitle || title || "").trim();
+    const imageUrls = getUploadedImageUrls(req);
+    // determine category from jobTitle when possible
+    let computedCategory = category;
+    if (serviceTitle) {
+      try {
+        const snapshot = await db
+          .collection("jobTitles")
+          .where("titles", "array-contains", serviceTitle)
+          .limit(1)
+          .get();
+        if (!snapshot.empty) {
+          computedCategory = snapshot.docs[0].data().category;
+        }
+      } catch (err) {
+        console.error("Error fetching job title category:", err.message);
+      }
+    }
+
+    const serviceData = {
+      title: serviceTitle,
+      jobTitle: serviceTitle,
+      description: description || "",
+      category: computedCategory || "",
+      imageUrl: imageUrls[0] || null,
+      imageUrls,
+      skills: normalizeSkills(skills),
+      vendorId: req.user.id,
+      vendorName: req.user.name,
+      createdAt: new Date(),
+    };
+
+    if (price !== undefined && price !== null && price !== "") {
+      serviceData.price = Number(price);
+    }
+
+    const serviceRef = await db.collection("services").add(serviceData);
+
+    res.status(201).json({
+      message: "Service added successfully",
+      id: serviceRef.id,
+    });
+  } catch (error) {
+    console.error("Error adding service:", error);
+    res.status(500).json({
+      message: "Something went wrong adding your service. Please try again.",
+    });
   }
-
-  const serviceData = {
-    title: serviceTitle,
-    jobTitle: serviceTitle,
-    description: description || "",
-    category: computedCategory || "",
-    imageUrl: imageUrls[0] || null,
-    imageUrls,
-    skills: normalizeSkills(skills),
-    vendorId: req.user.id,
-    vendorName: req.user.name,
-    createdAt: new Date(),
-  };
-
-  if (price !== undefined && price !== null && price !== "") {
-    serviceData.price = Number(price);
-  }
-
-  const serviceRef = await db.collection("services").add(serviceData);
-
-  res.status(201).json({
-    message: "Service added successfully",
-    id: serviceRef.id,
-  });
 };
+
 const getServices = async (req, res) => {
   try {
     const { category, vendorId } = req.query;
@@ -131,16 +142,39 @@ const getServices = async (req, res) => {
     if (vendorId) query = query.where("vendorId", "==", vendorId);
 
     const snapshot = await query.get();
-    const services = snapshot.docs.map((doc) => ({
+    let services = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
 
+    // filter out services from inactive vendors, and attach vendor location
+    if (!vendorId) {
+      const vendorsSnapshot = await db
+        .collection("users")
+        .where("role", "==", "vendor")
+        .where("subscriptionStatus", "==", "active")
+        .get();
+
+      const activeVendorLocations = new Map(
+        vendorsSnapshot.docs.map((doc) => [
+          doc.id,
+          doc.data().location || null,
+        ]),
+      );
+
+      services = services
+        .filter((s) => activeVendorLocations.has(s.vendorId))
+        .map((s) => ({
+          ...s,
+          vendorLocation: activeVendorLocations.get(s.vendorId),
+        }));
+    }
+
     res.status(200).json({ services });
   } catch (error) {
+    console.error("Error fetching services:", error);
     res.status(500).json({
-      message: "Error fetching services",
-      error: error.message,
+      message: "Unable to load services right now. Please try again.",
     });
   }
 };
@@ -155,9 +189,9 @@ const getServiceById = async (req, res) => {
 
     res.status(200).json({ id: doc.id, ...doc.data() });
   } catch (error) {
+    console.error("Error fetching service:", error);
     res.status(500).json({
-      message: "Error fetching service",
-      error: error.message,
+      message: "Unable to load this service right now. Please try again.",
     });
   }
 };
@@ -216,9 +250,9 @@ const updateService = async (req, res) => {
     await db.collection("services").doc(id).update(updates);
     res.status(200).json({ message: "Service updated successfully" });
   } catch (error) {
+    console.error("Error updating service:", error);
     res.status(500).json({
-      message: "Error updating service",
-      error: error.message,
+      message: "Something went wrong updating your service. Please try again.",
     });
   }
 };
@@ -238,12 +272,21 @@ const deleteService = async (req, res) => {
         .json({ message: "You can only delete your own services" });
     }
 
+    // clean up images from Cloudinary
+    if (Array.isArray(service.imageUrls) && service.imageUrls.length > 0) {
+      await Promise.all(
+        service.imageUrls.map((url) =>
+          deleteCloudinaryImage(extractPublicIdFromUrl(url)),
+        ),
+      );
+    }
+
     await db.collection("services").doc(id).delete();
     res.status(200).json({ message: "Service deleted successfully" });
   } catch (error) {
+    console.error("Error deleting service:", error);
     res.status(500).json({
-      message: "Error deleting service",
-      error: error.message,
+      message: "Something went wrong deleting your service. Please try again.",
     });
   }
 };
@@ -257,9 +300,9 @@ const getJobTitles = async (req, res) => {
     }));
     res.status(200).json({ jobTitles });
   } catch (error) {
+    console.error("Error fetching job titles:", error);
     res.status(500).json({
-      message: "Error fetching job titles",
-      error: error.message,
+      message: "Unable to load job titles right now. Please try again.",
     });
   }
 };

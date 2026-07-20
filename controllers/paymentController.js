@@ -1,5 +1,5 @@
 const axios = require("axios");
-const { db } = require("../config/firebase");
+const { db, admin } = require("../config/firebase");
 
 const initializeSubscription = async (req, res) => {
   try {
@@ -31,6 +31,7 @@ const initializeSubscription = async (req, res) => {
           plan,
           days: selectedPlan.days,
         },
+        callback_url: `${process.env.BASE_URL}/payments/callback`,
       },
       {
         headers: {
@@ -42,7 +43,10 @@ const initializeSubscription = async (req, res) => {
 
     const paystackData = response?.data?.data;
     if (!paystackData) {
-      return res.status(502).json({ message: "Invalid Paystack response" });
+      console.error("Invalid Paystack initialize response:", response?.data);
+      return res.status(502).json({
+        message: "Unable to start payment right now. Please try again.",
+      });
     }
 
     res.status(200).json({
@@ -53,9 +57,9 @@ const initializeSubscription = async (req, res) => {
       amount: selectedPlan.amount,
     });
   } catch (error) {
+    console.error("Error initializing subscription:", error);
     res.status(500).json({
-      message: "Error initializing subscription",
-      error: error.message,
+      message: "Something went wrong starting your payment. Please try again.",
     });
   }
 };
@@ -75,10 +79,17 @@ const verifySubscription = async (req, res) => {
 
     const paystackData = response?.data?.data;
     if (!paystackData) {
-      return res.status(502).json({ message: "Invalid Paystack response" });
+      console.error("Invalid Paystack verify response:", response?.data);
+      return res.status(502).json({
+        message: "Unable to verify payment right now. Please try again.",
+      });
     }
 
     const { status, metadata, amount } = paystackData;
+    console.log("PAYSTACK STATUS:", status);
+    console.log("PAYSTACK METADATA:", JSON.stringify(metadata));
+    console.log("VENDOR ID FROM META:", metadata?.vendorId);
+    console.log("DAYS FROM META:", metadata?.days);
 
     if (status !== "success") {
       return res.status(400).json({ message: "Payment not successful" });
@@ -109,11 +120,11 @@ const verifySubscription = async (req, res) => {
       .doc(vendorId)
       .update({
         subscriptionStatus: "active",
-        subscriptionExpiry: newExpiry,
+        subscriptionExpiry: admin.firestore.Timestamp.fromDate(newExpiry),
         lastPayment: {
           amount: amount / 100,
           plan,
-          paidAt: new Date(),
+          paidAt: admin.firestore.Timestamp.fromDate(new Date()),
           reference,
         },
       });
@@ -125,11 +136,95 @@ const verifySubscription = async (req, res) => {
       newExpiry,
     });
   } catch (error) {
+    console.error("Error verifying subscription:", error);
     res.status(500).json({
-      message: "Error verifying subscription",
-      error: error.message,
+      message:
+        "Something went wrong verifying your payment. Please contact support if you were charged.",
     });
   }
 };
 
-module.exports = { initializeSubscription, verifySubscription };
+const callbackSubscription = async (req, res) => {
+  try {
+    const { reference } = req.query;
+
+    if (!reference) {
+      return res.redirect(
+        `${process.env.BASE_URL}/dashboard.html?payment=failed`,
+      );
+    }
+
+    const response = await axios.get(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        },
+      },
+    );
+
+    const paystackData = response?.data?.data;
+    if (!paystackData) {
+      console.error("Invalid Paystack callback response:", response?.data);
+      return res.redirect(
+        `${process.env.BASE_URL}/dashboard.html?payment=failed`,
+      );
+    }
+
+    const { status, metadata, amount } = paystackData;
+
+    if (status !== "success") {
+      return res.redirect(
+        `${process.env.BASE_URL}/dashboard.html?payment=failed`,
+      );
+    }
+
+    const { vendorId, plan, days } = metadata;
+
+    const vendorDoc = await db.collection("users").doc(vendorId).get();
+    if (!vendorDoc.exists) {
+      return res.redirect(
+        `${process.env.BASE_URL}/dashboard.html?payment=failed`,
+      );
+    }
+
+    const vendorData = vendorDoc.data();
+    const now = new Date();
+    const currentExpiry = vendorData.subscriptionExpiry?.toDate
+      ? vendorData.subscriptionExpiry.toDate()
+      : now;
+
+    const baseDate = currentExpiry > now ? currentExpiry : now;
+    const newExpiry = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
+
+    await db
+      .collection("users")
+      .doc(vendorId)
+      .update({
+        subscriptionStatus: "active",
+        subscriptionExpiry: admin.firestore.Timestamp.fromDate(newExpiry),
+        lastPayment: {
+          amount: amount / 100,
+          plan,
+          paidAt: admin.firestore.Timestamp.fromDate(new Date()),
+          reference,
+        },
+      });
+
+    // redirect vendor back to dashboard with success
+    return res.redirect(
+      `${process.env.BASE_URL}/dashboard.html?payment=success`,
+    );
+  } catch (error) {
+    console.error("Error in payment callback:", error);
+    return res.redirect(
+      `${process.env.BASE_URL}/dashboard.html?payment=failed`,
+    );
+  }
+};
+
+module.exports = {
+  initializeSubscription,
+  verifySubscription,
+  callbackSubscription,
+};

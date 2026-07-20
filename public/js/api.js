@@ -9,14 +9,49 @@ const setUser = (user) => localStorage.setItem("user", JSON.stringify(user));
 const removeUser = () => localStorage.removeItem("user");
 
 // ── Headers ──
-const authHeaders = () => ({
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${getToken()}`,
-});
+const authHeaders = () => {
+  const token = getToken();
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+};
 
 const jsonHeaders = () => ({
   "Content-Type": "application/json",
 });
+
+// ── Response Handling ──
+// Wrapped in try/catch so a non-JSON response (network error page, unhandled
+// 500, proxy error, etc.) doesn't throw an unhandled rejection that silently
+// breaks the calling UI flow. Callers can keep checking res.message / res.id / res.token.
+const handleResponse = async (res) => {
+  let data;
+  try {
+    data = await res.json();
+  } catch (error) {
+    return {
+      status: res.status,
+      ok: res.ok,
+      statusText: res.statusText,
+      message: "Unexpected server response. Please try again.",
+      error: error.message,
+    };
+  }
+
+  if (res.status === 401) {
+    removeToken();
+    removeUser();
+    window.location.href = window.location.pathname;
+  }
+
+  return {
+    status: res.status,
+    ok: res.ok,
+    statusText: res.statusText,
+    ...data,
+  };
+};
 
 // ── Auth ──
 const login = async (email, password) => {
@@ -25,7 +60,7 @@ const login = async (email, password) => {
     headers: jsonHeaders(),
     body: JSON.stringify({ email, password }),
   });
-  return res.json();
+  return handleResponse(res);
 };
 
 const register = async (data) => {
@@ -34,7 +69,7 @@ const register = async (data) => {
     headers: jsonHeaders(),
     body: JSON.stringify(data),
   });
-  return res.json();
+  return handleResponse(res);
 };
 
 const registerVendor = async (data) => {
@@ -43,18 +78,18 @@ const registerVendor = async (data) => {
     headers: jsonHeaders(),
     body: JSON.stringify(data),
   });
-  return res.json();
+  return handleResponse(res);
 };
 
 // ── Products ──
 const getProducts = async () => {
   const res = await fetch(`${BASE_URL}/products`);
-  return res.json();
+  return handleResponse(res);
 };
 
 const getProductById = async (id) => {
   const res = await fetch(`${BASE_URL}/products/${id}`);
-  return res.json();
+  return handleResponse(res);
 };
 
 const addProduct = async (formData) => {
@@ -63,7 +98,7 @@ const addProduct = async (formData) => {
     headers: { Authorization: `Bearer ${getToken()}` },
     body: formData,
   });
-  return res.json();
+  return handleResponse(res);
 };
 
 const updateProduct = async (id, formData) => {
@@ -72,7 +107,7 @@ const updateProduct = async (id, formData) => {
     headers: { Authorization: `Bearer ${getToken()}` },
     body: formData,
   });
-  return res.json();
+  return handleResponse(res);
 };
 
 const deleteProduct = async (id) => {
@@ -80,23 +115,23 @@ const deleteProduct = async (id) => {
     method: "DELETE",
     headers: authHeaders(),
   });
-  return res.json();
+  return handleResponse(res);
 };
 
 // ── Services ──
 const getServices = async () => {
   const res = await fetch(`${BASE_URL}/services`);
-  return res.json();
+  return handleResponse(res);
 };
 
 const getServiceById = async (id) => {
   const res = await fetch(`${BASE_URL}/services/${id}`);
-  return res.json();
+  return handleResponse(res);
 };
 
 const getJobTitles = async () => {
   const res = await fetch(`${BASE_URL}/services/job-titles`);
-  return res.json();
+  return handleResponse(res);
 };
 
 const addService = async (formData) => {
@@ -105,7 +140,7 @@ const addService = async (formData) => {
     headers: { Authorization: `Bearer ${getToken()}` },
     body: formData,
   });
-  return res.json();
+  return handleResponse(res);
 };
 
 const updateService = async (id, formData) => {
@@ -114,7 +149,7 @@ const updateService = async (id, formData) => {
     headers: { Authorization: `Bearer ${getToken()}` },
     body: formData,
   });
-  return res.json();
+  return handleResponse(res);
 };
 
 const deleteService = async (id) => {
@@ -122,18 +157,31 @@ const deleteService = async (id) => {
     method: "DELETE",
     headers: authHeaders(),
   });
-  return res.json();
+  return handleResponse(res);
+};
+
+// ── Locations ──
+const getStates = async () => {
+  const res = await fetch(`${BASE_URL}/locations/states`);
+  return handleResponse(res);
+};
+
+const getLgas = async (state) => {
+  const res = await fetch(
+    `${BASE_URL}/locations/states/${encodeURIComponent(state)}/lgas`,
+  );
+  return handleResponse(res);
 };
 
 // ── Vendors ──
 const getVendors = async () => {
   const res = await fetch(`${BASE_URL}/vendors`);
-  return res.json();
+  return handleResponse(res);
 };
 
 const getVendorProfile = async (id) => {
   const res = await fetch(`${BASE_URL}/vendors/${id}`);
-  return res.json();
+  return handleResponse(res);
 };
 
 const updateVendorProfile = async (formData) => {
@@ -142,7 +190,7 @@ const updateVendorProfile = async (formData) => {
     headers: { Authorization: `Bearer ${getToken()}` },
     body: formData,
   });
-  return res.json();
+  return handleResponse(res);
 };
 
 const addPortfolioImages = async (formData) => {
@@ -151,13 +199,40 @@ const addPortfolioImages = async (formData) => {
     headers: { Authorization: `Bearer ${getToken()}` },
     body: formData,
   });
-  return res.json();
+  return handleResponse(res);
+};
+
+const updateVendorLocation = async (data) => {
+  const res = await fetch(`${BASE_URL}/vendors/location`, {
+    method: "PUT",
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  return handleResponse(res);
+};
+
+const removePortfolioImage = async (imageUrl) => {
+  const res = await fetch(`${BASE_URL}/vendors/portfolio`, {
+    method: "DELETE",
+    headers: authHeaders(),
+    body: JSON.stringify({ imageUrl }),
+  });
+  return handleResponse(res);
+};
+
+const updateVendorStatus = async (id, status) => {
+  const res = await fetch(`${BASE_URL}/vendors/${id}/status`, {
+    method: "PUT",
+    headers: authHeaders(),
+    body: JSON.stringify({ subscriptionStatus: status }),
+  });
+  return handleResponse(res);
 };
 
 // ── Collections ──
 const getVendorCollections = async (vendorId) => {
   const res = await fetch(`${BASE_URL}/collections/${vendorId}`);
-  return res.json();
+  return handleResponse(res);
 };
 
 const createCollection = async (data) => {
@@ -166,7 +241,7 @@ const createCollection = async (data) => {
     headers: authHeaders(),
     body: JSON.stringify(data),
   });
-  return res.json();
+  return handleResponse(res);
 };
 
 const addProductToCollection = async (collectionId, productId) => {
@@ -175,7 +250,18 @@ const addProductToCollection = async (collectionId, productId) => {
     headers: authHeaders(),
     body: JSON.stringify({ productId }),
   });
-  return res.json();
+  return handleResponse(res);
+};
+
+const removeProductFromCollection = async (collectionId, productId) => {
+  const res = await fetch(
+    `${BASE_URL}/collections/${collectionId}/products/${productId}`,
+    {
+      method: "DELETE",
+      headers: authHeaders(),
+    },
+  );
+  return handleResponse(res);
 };
 
 const deleteCollection = async (collectionId) => {
@@ -183,7 +269,7 @@ const deleteCollection = async (collectionId) => {
     method: "DELETE",
     headers: authHeaders(),
   });
-  return res.json();
+  return handleResponse(res);
 };
 
 // ── Payments ──
@@ -193,14 +279,14 @@ const initializeSubscription = async (plan) => {
     headers: authHeaders(),
     body: JSON.stringify({ plan }),
   });
-  return res.json();
+  return handleResponse(res);
 };
 
 const verifySubscription = async (reference) => {
   const res = await fetch(`${BASE_URL}/payments/verify/${reference}`, {
     headers: authHeaders(),
   });
-  return res.json();
+  return handleResponse(res);
 };
 
 // ── Toast Notification ──

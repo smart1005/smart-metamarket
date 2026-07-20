@@ -6,14 +6,19 @@
 }
 
 :root {
-  --bg: #0a0a0a;
-  --card: #1a1a1a;
+  --bg: #5e919c;
+  --card: #141414;
+  --card-hover: #1a1a1a;
   --primary: #FF6B35;
   --primary-hover: #ff8c5a;
+  --accent: #FFD700;
   --text: #ffffff;
-  --subtext: #888888;
+  --subtext: #aaaaaa;
   --border: #2a2a2a;
-  --success: #00b14f;
+  --border-hover: #3a3a3a;
+  --success: #10b981;
+  --glow: rgba(255, 107, 53, 0.12);
+  --gold-glow: rgba(255, 215, 0, 0.08);
 }
 
 html {
@@ -156,6 +161,13 @@ a {
   margin: 0 auto 30px;
 }
 
+.dashboard-content {
+  padding-top: 160px;
+  padding-bottom: 30px;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
 .search-box {
   display: flex;
   align-items: center;
@@ -254,7 +266,7 @@ a {
 .vendor-card {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
   transition: all 0.3s ease;
   cursor: pointer;
@@ -262,7 +274,8 @@ a {
 
 .vendor-card:hover {
   border-color: var(--primary);
-  transform: translateY(-3px);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px var(--glow);
 }
 
 .vendor-card-image {
@@ -278,6 +291,13 @@ a {
 
 .vendor-card-body h3 {
   margin-bottom: 4px;
+  color: var(--text);
+}
+
+.vendor-card-body .vendor-by {
+  font-size: 0.8rem;
+  color: var(--accent);
+  margin-bottom: 8px;
 }
 
 .vendor-card-body p {
@@ -424,4 +444,169 @@ a {
 }
 
 .toast.success { border-color: var(--success); }
-.toast.error { border-color: red; }
+.toast.error { border-color: red; }/* ── Horizontal Scroll Section ── */
+.h-scroll {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  scrollbar-width: none;
+}
+
+.h-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Product Card (horizontal scroll) ── */
+.product-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  min-width: 160px;
+  max-width: 160px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+  flex-direction: column;
+  display: flex;
+}
+
+.product-card:hover {
+  border-color: var(--primary);
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px var(--glow);
+}
+
+.product-card img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  display: block;
+  flex-shrink: 0;
+}
+
+.product-card-body {
+  padding: 10px;
+  flex: 1;
+}
+
+.product-card-body h4 {
+  font-size: 0.85rem;
+  color: var(--text);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.product-card-body .by {
+  font-size: 0.75rem;
+  color: var(--accent);
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.product-card-body .price {
+  font-size: 0.9rem;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+/* ── Service Card (horizontal scroll) ── */
+.service-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  min-width: 200px;
+  max-width: 200px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+  padding: 16px;
+}
+
+.service-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px var(--gold-glow);
+}
+
+.service-card .service-icon {
+  font-size: 2rem;
+  margin-bottom: 10px;
+}
+
+.service-card h4 {
+  font-size: 0.9rem;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.service-card .by {
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
+/* ── Section Header ── */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.section-header h2 {
+  font-size: 1.2rem;
+  color: var(--text);
+}
+
+.section-header a {
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* ── Gold accent text ── */
+.text-gold { color: var(--accent); }
+
+/* ── Glow card ── */
+.glow-card {
+  box-shadow: 0 0 20px var(--glow);
+  border-color: var(--primary) !important;
+}
+
+/* ── Category chip ── */
+.category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 0.8rem;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.category-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--gold-glow);
+}
+
+/* ── Hero subtitle ── */
+.hero-subtitle {
+  font-size: 1rem;
+  color: var(--accent);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  margin-bottom: 30px;
+}

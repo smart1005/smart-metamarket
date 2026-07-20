@@ -46,8 +46,7 @@ router.put(
 router.delete(
   "/:id",
   protect,
-  restrictTo("vendor"),
-  checkSubscription,
+  restrictTo("vendor", "admin", "superAdmin"),
   asyncHandler(deleteService),
 );
 

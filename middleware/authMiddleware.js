@@ -63,15 +63,25 @@ const checkSubscription = async (req, res, next) => {
     }
 
     const now = new Date();
-    const expiry = vendorData.subscriptionExpiry?.toDate
-      ? vendorData.subscriptionExpiry.toDate()
-      : null;
+    let expiry = null;
+    if (vendorData.subscriptionExpiry) {
+      if (typeof vendorData.subscriptionExpiry.toDate === "function") {
+        expiry = vendorData.subscriptionExpiry.toDate();
+      } else if (vendorData.subscriptionExpiry instanceof Date) {
+        expiry = vendorData.subscriptionExpiry;
+      } else {
+        const parsed = new Date(vendorData.subscriptionExpiry);
+        expiry = isNaN(parsed) ? null : parsed;
+      }
+    }
 
     if (!expiry || expiry < now) {
-      // auto update status to inactive in Firestore
-      await db.collection("users").doc(req.user.id).update({
-        subscriptionStatus: "inactive",
-      });
+      // auto update status to inactive in Firestore only if currently active
+      if (vendorData.subscriptionStatus === "active") {
+        await db.collection("users").doc(req.user.id).update({
+          subscriptionStatus: "inactive",
+        });
+      }
       return res.status(403).json({
         message:
           "Your subscription has expired. Please renew to continue listing.",

@@ -42,10 +42,10 @@ const renderVendorPage = (vendor, collections, services) => {
     </div>
 
     <!-- Vendor Info -->
-    <div class="vendor-info">
+   <div class="vendor-info">
       <h1>${vendor.businessName}</h1>
       <p>${vendor.category || ""} ${vendor.location?.city ? "• 📍 " + vendor.location.city : ""}</p>
-
+      ${vendor.about ? `<p style="margin-top: 8px; font-size: 0.9rem;">${vendor.about}</p>` : ""}
       <!-- Contact Buttons -->
       <div class="contact-buttons">
         ${whatsappNumber ? `<a href="${whatsappLink}" target="_blank" class="whatsapp-btn">💬 WhatsApp</a>` : ""}
@@ -67,14 +67,18 @@ const renderVendorPage = (vendor, collections, services) => {
           : ""
       }
 
-      <!-- Tab Bar -->
+    <!-- Tab Bar -->
       <div class="tab-bar">
         <button class="tab-btn active" id="tab-products" onclick="switchVendorTab('products')">
           🛍️ ${vendor.vendorType === "service" ? "Services" : "Products"}
         </button>
-        <button class="tab-btn" id="tab-services" onclick="switchVendorTab('services')">
-          📁 Collections
-        </button>
+        ${
+          vendor.vendorType === "service"
+            ? ""
+            : `<button class="tab-btn" id="tab-services" onclick="switchVendorTab('services')">
+                📁 Collections
+              </button>`
+        }
         <button class="tab-btn" id="tab-portfolio" onclick="switchVendorTab('portfolio')">
           🖼️ Portfolio
         </button>
@@ -85,10 +89,14 @@ const renderVendorPage = (vendor, collections, services) => {
         ${renderProductsOrServices(vendor, services)}
       </div>
 
-      <!-- Collections Tab -->
-      <div id="tab-content-services" style="display: none;">
-        ${renderCollections(collections)}
-      </div>
+      ${
+        vendor.vendorType === "service"
+          ? ""
+          : `<!-- Collections Tab -->
+            <div id="tab-content-services" style="display: none;">
+              ${renderCollections(collections)}
+            </div>`
+      }
 
       <!-- Portfolio Tab -->
       <div id="tab-content-portfolio" style="display: none;">
@@ -149,17 +157,15 @@ const renderCollections = (collections) => {
       ${
         col.products && col.products.length > 0
           ? `
-        <div class="product-grid">
+       <div class="product-grid">
           ${col.products
             .map(
               (item) => `
             <div class="product-item">
-              <div style="height: 120px; background: var(--border); display: flex; align-items: center; justify-content: center;">
-                <span style="color: var(--subtext); font-size: 0.8rem;">No Image</span>
-              </div>
+              <img src="${item.imageUrl || "https://via.placeholder.com/200x120/1a1a1a/FF6B35?text=No+Image"}" alt="${item.name}" />
               <div class="product-item-body">
-                <h4>${item.productName}</h4>
-                <p class="price">₦${Number(item.productPrice).toLocaleString()}</p>
+                <h4>${item.name}</h4>
+                <p class="price">₦${Number(item.price).toLocaleString()}</p>
               </div>
             </div>
           `,

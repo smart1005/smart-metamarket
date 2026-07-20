@@ -1,11 +1,51 @@
 const { db } = require("../config/firebase");
 
+const MAX_COLLECTIONS_PER_VENDOR = 15;
+const UNCATEGORIZED_NAME = "Uncategorized";
+
+// Finds the vendor's "Uncategorized" collection, creating it if it doesn't
+// exist yet. Used both for migrating old orphaned products and for
+// re-homing products when their collection is deleted.
+const getOrCreateUncategorized = async (vendorId, vendorName) => {
+  const existing = await db
+    .collection("vendorCollections")
+    .where("vendorId", "==", vendorId)
+    .where("name", "==", UNCATEGORIZED_NAME)
+    .limit(1)
+    .get();
+
+  if (!existing.empty) {
+    return { id: existing.docs[0].id, name: UNCATEGORIZED_NAME };
+  }
+
+  const newDoc = await db.collection("vendorCollections").add({
+    name: UNCATEGORIZED_NAME,
+    description: "Products not yet assigned to a collection",
+    vendorId,
+    vendorName,
+    createdAt: new Date(),
+  });
+
+  return { id: newDoc.id, name: UNCATEGORIZED_NAME };
+};
+
 const createCollection = async (req, res) => {
   try {
     const { name, description } = req.body;
 
     if (!name) {
       return res.status(400).json({ message: "Collection name is required" });
+    }
+
+    const existingCount = await db
+      .collection("vendorCollections")
+      .where("vendorId", "==", req.user.id)
+      .get();
+
+    if (existingCount.size >= MAX_COLLECTIONS_PER_VENDOR) {
+      return res.status(400).json({
+        message: `You've reached the maximum of ${MAX_COLLECTIONS_PER_VENDOR} collections.`,
+      });
     }
 
     const collectionRef = await db.collection("vendorCollections").add({
@@ -21,9 +61,10 @@ const createCollection = async (req, res) => {
       id: collectionRef.id,
     });
   } catch (error) {
+    console.error("Error creating collection:", error);
     res.status(500).json({
-      message: "Error creating collection",
-      error: error.message,
+      message:
+        "Something went wrong creating your collection. Please try again.",
     });
   }
 };
@@ -31,135 +72,75 @@ const createCollection = async (req, res) => {
 const getVendorCollections = async (req, res) => {
   try {
     const { vendorId } = req.params;
-    const snapshot = await db
-      .collection("vendorCollections")
-      .where("vendorId", "==", vendorId)
-      .get();
 
-    const collections = await Promise.all(
-      snapshot.docs.map(async (doc) => {
-        // get products inside this collection
-        const productsSnapshot = await db
-          .collection("collectionItems")
-          .where("collectionId", "==", doc.id)
-          .get();
+    const [collectionsSnapshot, productsSnapshot] = await Promise.all([
+      db
+        .collection("vendorCollections")
+        .where("vendorId", "==", vendorId)
+        .get(),
+      db.collection("products").where("vendorId", "==", vendorId).get(),
+    ]);
 
-        const products = productsSnapshot.docs.map((p) => ({
-          id: p.id,
-          ...p.data(),
-        }));
+    let collections = collectionsSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
 
-        return {
-          id: doc.id,
-          ...doc.data(),
-          products,
-        };
-      }),
-    );
+    let products = productsSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
 
-    res.status(200).json({ collections });
+    // self-healing migration: any product with no collectionId gets
+    // moved into (a lazily-created) "Uncategorized" collection
+    const orphaned = products.filter((p) => !p.collectionId);
+    if (orphaned.length > 0) {
+      const vendorName = orphaned[0].vendorName;
+      const uncategorized = await getOrCreateUncategorized(
+        vendorId,
+        vendorName,
+      );
+
+      const batch = db.batch();
+      orphaned.forEach((p) => {
+        batch.update(db.collection("products").doc(p.id), {
+          collectionId: uncategorized.id,
+          collectionName: uncategorized.name,
+        });
+      });
+      await batch.commit();
+
+      // reflect the change in our in-memory copies without re-querying
+      products = products.map((p) =>
+        p.collectionId
+          ? p
+          : {
+              ...p,
+              collectionId: uncategorized.id,
+              collectionName: uncategorized.name,
+            },
+      );
+      if (!collections.some((c) => c.id === uncategorized.id)) {
+        collections.push({
+          id: uncategorized.id,
+          name: uncategorized.name,
+          description: "Products not yet assigned to a collection",
+          vendorId,
+          vendorName,
+        });
+      }
+    }
+
+    const result = collections.map((col) => ({
+      ...col,
+      products: products.filter((p) => p.collectionId === col.id),
+    }));
+
+    res.status(200).json({ collections: result });
   } catch (error) {
+    console.error("Error fetching collections:", error);
     res.status(500).json({
-      message: "Error fetching collections",
-      error: error.message,
-    });
-  }
-};
-
-const addProductToCollection = async (req, res) => {
-  try {
-    const { collectionId } = req.params;
-    const { productId } = req.body;
-
-    if (!productId) {
-      return res.status(400).json({ message: "Product ID is required" });
-    }
-
-    // verify collection belongs to this vendor
-    const collectionDoc = await db
-      .collection("vendorCollections")
-      .doc(collectionId)
-      .get();
-
-    if (!collectionDoc.exists) {
-      return res.status(404).json({ message: "Collection not found" });
-    }
-
-    if (collectionDoc.data().vendorId !== req.user.id) {
-      return res
-        .status(403)
-        .json({ message: "You can only add to your own collections" });
-    }
-
-    // verify product belongs to this vendor
-    const productDoc = await db.collection("products").doc(productId).get();
-    if (!productDoc.exists) {
-      return res.status(404).json({ message: "Product not found" });
-    }
-
-    if (productDoc.data().vendorId !== req.user.id) {
-      return res
-        .status(403)
-        .json({ message: "You can only add your own products to collections" });
-    }
-
-    // check if product already in collection
-    const existing = await db
-      .collection("collectionItems")
-      .where("collectionId", "==", collectionId)
-      .where("productId", "==", productId)
-      .get();
-
-    if (!existing.empty) {
-      return res
-        .status(400)
-        .json({ message: "Product already in this collection" });
-    }
-
-    await db.collection("collectionItems").add({
-      collectionId,
-      productId,
-      productName: productDoc.data().name,
-      productPrice: productDoc.data().price,
-      vendorId: req.user.id,
-      addedAt: new Date(),
-    });
-
-    res
-      .status(201)
-      .json({ message: "Product added to collection successfully" });
-  } catch (error) {
-    res.status(500).json({
-      message: "Error adding product to collection",
-      error: error.message,
-    });
-  }
-};
-
-const removeProductFromCollection = async (req, res) => {
-  try {
-    const { collectionId, productId } = req.params;
-
-    const snapshot = await db
-      .collection("collectionItems")
-      .where("collectionId", "==", collectionId)
-      .where("productId", "==", productId)
-      .get();
-
-    if (snapshot.empty) {
-      return res
-        .status(404)
-        .json({ message: "Product not found in collection" });
-    }
-
-    await snapshot.docs[0].ref.delete();
-    res
-      .status(200)
-      .json({ message: "Product removed from collection successfully" });
-  } catch (error) {
-    res.status(500).json({
-      message: "Error removing product from collection",
-      error: error.message,
+      message: "Unable to load collections right now. Please try again.",
     });
   }
 };
@@ -177,30 +158,48 @@ const deleteCollection = async (req, res) => {
       return res.status(404).json({ message: "Collection not found" });
     }
 
-    if (collectionDoc.data().vendorId !== req.user.id) {
+    const collectionData = collectionDoc.data();
+    if (collectionData.vendorId !== req.user.id) {
       return res
         .status(403)
         .json({ message: "You can only delete your own collections" });
     }
 
-    // delete all items in collection first
-    const itemsSnapshot = await db
-      .collection("collectionItems")
+    if (collectionData.name === UNCATEGORIZED_NAME) {
+      return res
+        .status(400)
+        .json({ message: "The Uncategorized collection can't be deleted" });
+    }
+
+    // re-home any products in this collection into Uncategorized
+    const productsSnapshot = await db
+      .collection("products")
       .where("collectionId", "==", collectionId)
       .get();
 
-    const batch = db.batch();
-    itemsSnapshot.docs.forEach((doc) => batch.delete(doc.ref));
-    await batch.commit();
+    if (!productsSnapshot.empty) {
+      const uncategorized = await getOrCreateUncategorized(
+        req.user.id,
+        req.user.name,
+      );
+      const batch = db.batch();
+      productsSnapshot.docs.forEach((doc) => {
+        batch.update(doc.ref, {
+          collectionId: uncategorized.id,
+          collectionName: uncategorized.name,
+        });
+      });
+      await batch.commit();
+    }
 
-    // then delete collection
     await db.collection("vendorCollections").doc(collectionId).delete();
 
     res.status(200).json({ message: "Collection deleted successfully" });
   } catch (error) {
+    console.error("Error deleting collection:", error);
     res.status(500).json({
-      message: "Error deleting collection",
-      error: error.message,
+      message:
+        "Something went wrong deleting your collection. Please try again.",
     });
   }
 };
@@ -208,7 +207,5 @@ const deleteCollection = async (req, res) => {
 module.exports = {
   createCollection,
   getVendorCollections,
-  addProductToCollection,
-  removeProductFromCollection,
   deleteCollection,
 };
