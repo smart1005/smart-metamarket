@@ -1,6 +1,6 @@
 const axios = require("axios");
 const { db, admin } = require("../config/firebase");
-const { buildLocationData } = require("../utils/locationLookup");
+const { buildLocationData } = require("../utils/LocationLookup");
 
 // Maps common Firebase Admin SDK error codes to friendly, safe messages.
 // Returns null for anything unrecognized so the caller falls back to a

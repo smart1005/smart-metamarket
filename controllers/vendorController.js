@@ -1,6 +1,6 @@
 const { db } = require("../config/firebase");
 const cloudinary = require("cloudinary").v2;
-const { buildLocationData } = require("../utils/locationLookup");
+const { buildLocationData } = require("../utils/LocationLookup");
 
 const MAX_PORTFOLIO_IMAGES = 10;
 const MAX_CERTIFICATION_IMAGES = 5;

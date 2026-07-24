@@ -213,7 +213,7 @@ const handleLogin = async () => {
     setUser(res.user);
     currentUser = res.user;
     showToast("Login successful!");
-    showDashboard();
+    await showDashboard();
   } else {
     showToast(res.error || res.message || "Login failed", "error");
   }

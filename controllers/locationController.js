@@ -1,4 +1,4 @@
-const { getStatesList, getLgasForState } = require("../utils/locationLookup");
+const { getStatesList, getLgasForState } = require("../utils/LocationLookup");
 
 const getStates = (req, res) => {
   try {
